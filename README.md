@@ -21,3 +21,18 @@ npm install
 cp .env.example .env
 npm run dev
 ```
+
+## ⚡ Routes principales
+
+- `GET/health` — vérifie l’état du serveur
+- `GET/users` — liste les utilisateurs actifs
+- `PATCH/users/:id` — met à jour un utilisateur
+- `DELETE/users/:id` — soft delete
+
+## 🛠️ Stack
+
+Node.js / Express
+MongoDB (driver officiel)
+Joi (validation)
+Argon2 (hashage)
+Nodemon (dev)

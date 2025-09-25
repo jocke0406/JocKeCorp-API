@@ -1,7 +1,18 @@
+// src/routes/auth.routes.js
 import { Router } from "express";
-import { register, login } from "../controllers/auth.controller.js";
+import {
+  register,
+  login,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
+} from "../controllers/auth.controller.js";
 
 const r = Router();
-r.post("/register", register); // alias de POST /users
-r.post("/login", login); // vérifie le hash
+r.post("/register", register);
+r.post("/login", login);
+r.post("/forgot-password", forgotPassword);
+r.post("/reset-password", resetPassword);
+r.get("/verify-email", verifyEmail);
+
 export default r;
