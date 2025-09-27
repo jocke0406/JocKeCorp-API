@@ -1,8 +1,28 @@
 import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import routes from "./routes/index.js";
 
 const app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
+app.use(helmet({ contentSecurityPolicy: false }));
+
+const ORIGIN = process.env.APP_ORIGIN || "https://jocke.be";
+app.use(cors({ origin: ORIGIN, credentials: false }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/auth", authLimiter);
 
 // Health
 app.get("/health", (_req, res) => res.json({ ok: true }));
