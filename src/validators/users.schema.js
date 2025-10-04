@@ -1,5 +1,7 @@
 import Joi from "joi";
 
+export const DEFAULT_ROLE = "visiteur";
+
 // Payloads
 export const registerSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -7,7 +9,13 @@ export const registerSchema = Joi.object({
   display_name: Joi.string().allow("", null),
   role: Joi.string()
     .valid("MasterOfUnivers", "superadmin", "officier", "agent", "visiteur")
-    .default("visiteur"),
+    .default(DEFAULT_ROLE),
+});
+
+export const publicRegisterSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).required(),
+  display_name: Joi.string().allow("", null),
 });
 
 export const loginSchema = Joi.object({

@@ -1,7 +1,11 @@
 // src/controllers/auth.controller.js
 import { getCollection } from "../db/client.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
-import { loginSchema, registerSchema } from "../validators/users.schema.js";
+import {
+  DEFAULT_ROLE,
+  loginSchema,
+  publicRegisterSchema,
+} from "../validators/users.schema.js";
 import {
   forgotSchema,
   resetSchema,
@@ -15,7 +19,7 @@ const now = () => new Date();
 
 /** REGISTER: crée user non vérifié + log lien vérification */
 export async function register(req, res) {
-  const { error, value } = registerSchema.validate(req.body, {
+  const { error, value } = publicRegisterSchema.validate(req.body, {
     abortEarly: false,
     stripUnknown: true,
   });
@@ -31,7 +35,7 @@ export async function register(req, res) {
     const doc = {
       email,
       password_hash: await hashPassword(value.password),
-      role: value.role,
+      role: DEFAULT_ROLE,
       display_name: value.display_name ?? null,
       email_verified_at: null, // 👈 non vérifié à la création
       created_at: now(),
