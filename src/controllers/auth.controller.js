@@ -1,25 +1,22 @@
-// src/controllers/auth.controller.js
 import { getCollection } from "../db/client.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
-import {
-  DEFAULT_ROLE,
-  loginSchema,
-  publicRegisterSchema,
-} from "../validators/users.schema.js";
+import { loginSchema, registerSchema } from "../validators/users.schema.js";
 import {
   forgotSchema,
   resetSchema,
   verifyEmailSchema,
 } from "../validators/auth.schema.js";
 import { genToken, hashToken } from "../utils/token.js";
+import { sendMail, renderVerifyEmail, renderResetPassword } from "../utils/mailer.js";
 
 const Users = () => getCollection("users");
 const Tokens = () => getCollection("tokens");
 const now = () => new Date();
+const { APP_BASE_URL } = process.env;
 
-/** REGISTER: crée user non vérifié + log lien vérification */
+/** REGISTER: crée user non vérifié + envoie l'email de confirmation */
 export async function register(req, res) {
-  const { error, value } = publicRegisterSchema.validate(req.body, {
+  const { error, value } = registerSchema.validate(req.body, {
     abortEarly: false,
     stripUnknown: true,
   });
@@ -35,9 +32,9 @@ export async function register(req, res) {
     const doc = {
       email,
       password_hash: await hashPassword(value.password),
-      role: DEFAULT_ROLE,
+      role: value.role,
       display_name: value.display_name ?? null,
-      email_verified_at: null, // 👈 non vérifié à la création
+      email_verified_at: null, // non vérifié à la création
       created_at: now(),
       updated_at: now(),
     };
@@ -55,9 +52,13 @@ export async function register(req, res) {
       used_at: null,
     });
 
-    // Lien à envoyer par email (pour l'instant on log)
-    const link = `http://localhost:3000/auth/verify-email?token=${t.token}`;
-    console.log("📧 Email verification link:", email, "=>", link);
+    // Email réel
+    const tpl = renderVerifyEmail({ appBaseUrl: APP_BASE_URL, token: t.token });
+    await sendMail({
+      to: email,
+      subject: tpl.subject,
+      html: tpl.html,
+    });
 
     return res.status(201).json({
       _id: insertedId,
@@ -100,6 +101,35 @@ export async function verifyEmail(req, res) {
     await Tokens().updateOne({ _id: tok._id }, { $set: { used_at: now() } });
 
     return res.json({ message: "Email vérifié. Tu peux te connecter." });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/** RESEND VERIFY: regénère un token et renvoie un email (toujours 200 pour éviter l'énumération) */
+export async function resendVerify(req, res) {
+  try {
+    const emailRaw = req.body?.email;
+    if (!emailRaw || typeof emailRaw !== "string") {
+      return res.status(200).json({ message: "Si le compte existe, un email a été envoyé." });
+    }
+    const email = emailRaw.trim().toLowerCase();
+    const user = await Users().findOne({ email, deleted_at: { $exists: false } });
+    if (user && !user.email_verified_at) {
+      const t = genToken(32, 60 * 24);
+      await Tokens().insertOne({
+        user_id: user._id,
+        purpose: "verify_email",
+        token_hash: t.token_hash,
+        created_at: t.created_at,
+        expires_at: t.expires_at,
+        used_at: null,
+      });
+      const tpl = renderVerifyEmail({ appBaseUrl: APP_BASE_URL, token: t.token });
+      await sendMail({ to: email, subject: tpl.subject, html: tpl.html });
+    }
+    return res.status(200).json({ message: "Si le compte existe, un email a été envoyé." });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Internal server error" });
@@ -154,6 +184,7 @@ export async function forgotPassword(req, res) {
     abortEarly: false,
     stripUnknown: true,
   });
+  // On répond 200 même si invalid pour ne pas leak l'existence
   if (error)
     return res
       .status(200)
@@ -176,8 +207,9 @@ export async function forgotPassword(req, res) {
         expires_at: t.expires_at,
         used_at: null,
       });
-      const link = `http://localhost:3000/auth/reset-password?token=${t.token}`;
-      console.log("🔐 Password reset link:", email, "=>", link);
+
+      const tpl = renderResetPassword({ appBaseUrl: APP_BASE_URL, token: t.token });
+      await sendMail({ to: email, subject: tpl.subject, html: tpl.html });
     }
 
     return res
