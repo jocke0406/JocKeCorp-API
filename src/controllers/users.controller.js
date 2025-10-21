@@ -1,9 +1,9 @@
-import { ObjectId } from "mongodb";
-import { getCollection } from "../db/client.js";
-import { hashPassword } from "../utils/password.js";
-import { registerSchema, updateSchema } from "../validators/users.schema.js";
+import { ObjectId } from 'mongodb';
+import { getCollection } from '../db/client.js';
+import { hashPassword } from '../utils/password.js';
+import { registerSchema, updateSchema } from '../validators/users.schema.js';
 
-const Users = () => getCollection("users");
+const Users = () => getCollection('users');
 const oid = (id) => ObjectId.createFromHexString(id);
 const now = () => new Date();
 
@@ -15,16 +15,13 @@ export async function createUser(req, res) {
       stripUnknown: true,
     });
     const email = String(value.email).trim().toLowerCase();
-    if (error)
-      return res
-        .status(400)
-        .json({ error: "Validation error", details: error.details });
+    if (error) return res.status(400).json({ error: 'Validation error', details: error.details });
 
     const doc = {
       email: email,
       password_hash: await hashPassword(value.password),
       role: value.role,
-      display_name: value.display_name ?? null,
+      display_name: rawDisplay || null,
       created_at: now(),
       updated_at: now(),
     };
@@ -41,10 +38,9 @@ export async function createUser(req, res) {
       created_at: doc.created_at,
     });
   } catch (e) {
-    if (e?.code === 11000)
-      return res.status(409).json({ error: "Email déjà utilisé" });
+    if (e?.code === 11000) return res.status(409).json({ error: 'Email déjà utilisé' });
     console.error(e);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -52,17 +48,14 @@ export async function createUser(req, res) {
 export async function listUsers(_req, res) {
   try {
     const arr = await Users()
-      .find(
-        { deleted_at: { $exists: false } },
-        { projection: { password_hash: 0 } }
-      )
+      .find({ deleted_at: { $exists: false } }, { projection: { password_hash: 0 } })
       .sort({ created_at: -1 })
       .limit(100)
       .toArray();
     res.json(arr);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -70,19 +63,17 @@ export async function listUsers(_req, res) {
 export async function getUserById(req, res) {
   try {
     const { id } = req.params;
-    if (!ObjectId.isValid(id))
-      return res.status(400).json({ error: "Invalid id" });
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
 
     const user = await Users().findOne(
       { _id: oid(id), deleted_at: { $exists: false } },
       { projection: { password_hash: 0 } }
     );
-    if (!user)
-      return res.status(404).json({ error: "Utilisateur introuvable" });
+    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
     res.json(user);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -90,36 +81,32 @@ export async function getUserById(req, res) {
 export async function updateUser(req, res) {
   try {
     const { id } = req.params;
-    if (!ObjectId.isValid(id))
-      return res.status(400).json({ error: "Invalid id" });
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
 
     const { error, value } = updateSchema.validate(req.body, {
       abortEarly: false,
       stripUnknown: true,
     });
-    if (error)
-      return res
-        .status(400)
-        .json({ error: "Validation error", details: error.details });
+    if (error) return res.status(400).json({ error: 'Validation error', details: error.details });
 
     const r = await Users().findOneAndUpdate(
       { _id: oid(id), deleted_at: { $exists: false } },
       { $set: { ...value, updated_at: now() } },
       {
-        returnDocument: "after",
+        returnDocument: 'after',
         projection: { password_hash: 0 },
         includeResultMetadata: true, // 👈 clé : permet d'utiliser updatedExisting
       }
     );
 
     if (!r.lastErrorObject?.updatedExisting) {
-      return res.status(404).json({ error: "Utilisateur introuvable", id });
+      return res.status(404).json({ error: 'Utilisateur introuvable', id });
     }
 
     // r.value contient l'objet à jour si updatedExisting === true
     return res.json(r.value);
   } catch {
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -127,21 +114,18 @@ export async function updateUser(req, res) {
 export async function deleteUser(req, res) {
   try {
     const { id } = req.params;
-    if (!ObjectId.isValid(id))
-      return res.status(400).json({ error: "Invalid id" });
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
 
     const r = await Users().updateOne(
       { _id: oid(id), deleted_at: { $exists: false } },
       { $set: { deleted_at: now(), updated_at: now() } }
     );
 
-    if (!r.matchedCount)
-      return res.status(404).json({ error: "Utilisateur introuvable", id });
-    if (!r.modifiedCount)
-      return res.status(200).json({ message: "User already deleted", id });
+    if (!r.matchedCount) return res.status(404).json({ error: 'Utilisateur introuvable', id });
+    if (!r.modifiedCount) return res.status(200).json({ message: 'User already deleted', id });
 
-    return res.status(200).json({ message: "User deleted", id });
+    return res.status(200).json({ message: 'User deleted', id });
   } catch {
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
