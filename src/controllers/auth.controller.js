@@ -24,9 +24,6 @@ export async function register(req, res) {
     const email = String(value.email).trim().toLowerCase();
     const rawDisplay = (value.display_name ?? '').trim();
 
-    // idéalement à faire au bootstrap, mais OK ici si idempotent
-    await Users().createIndex({ email: 1 }, { unique: true });
-
     const doc = {
       email,
       password_hash: await hashPassword(value.password),

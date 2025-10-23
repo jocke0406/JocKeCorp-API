@@ -14,22 +14,24 @@ export async function createUser(req, res) {
       abortEarly: false,
       stripUnknown: true,
     });
+    if (error) {
+      return res.status(400).json({ error: 'Validation error', details: error.details });
+    }
+
     const email = String(value.email).trim().toLowerCase();
-    if (error) return res.status(400).json({ error: 'Validation error', details: error.details });
+    const rawDisplay = (value.display_name ?? '').trim();
 
     const doc = {
-      email: email,
+      email,
       password_hash: await hashPassword(value.password),
-      role: value.role,
+      role: value.role, // registerSchema fournit "visiteur" par défaut
       display_name: rawDisplay || null,
       created_at: now(),
       updated_at: now(),
     };
 
-    // index unique email (au cas où ça n’existe pas encore)
-    await Users().createIndex({ email: 1 }, { unique: true });
-
     const r = await Users().insertOne(doc);
+
     return res.status(201).json({
       _id: r.insertedId,
       email: doc.email,
@@ -39,7 +41,7 @@ export async function createUser(req, res) {
     });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ error: 'Email déjà utilisé' });
-    console.error(e);
+    console.error('[createUser] ERROR:', e);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -81,31 +83,45 @@ export async function getUserById(req, res) {
 export async function updateUser(req, res) {
   try {
     const { id } = req.params;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
 
+    // Valide et nettoie le payload
     const { error, value } = updateSchema.validate(req.body, {
       abortEarly: false,
       stripUnknown: true,
     });
-    if (error) return res.status(400).json({ error: 'Validation error', details: error.details });
+    if (error) {
+      return res.status(400).json({ error: 'Validation error', details: error.details });
+    }
+
+    // ⚙️ Normalisation display_name : "" -> null (et trim)
+    const patch = { ...value };
+    if (Object.prototype.hasOwnProperty.call(patch, 'display_name')) {
+      const dn = (patch.display_name ?? '').trim();
+      patch.display_name = dn || null;
+    }
 
     const r = await Users().findOneAndUpdate(
       { _id: oid(id), deleted_at: { $exists: false } },
-      { $set: { ...value, updated_at: now() } },
+      { $set: { ...patch, updated_at: now() } },
       {
         returnDocument: 'after',
         projection: { password_hash: 0 },
-        includeResultMetadata: true, // 👈 clé : permet d'utiliser updatedExisting
+        includeResultMetadata: true, // permet d'avoir lastErrorObject
       }
     );
 
-    if (!r.lastErrorObject?.updatedExisting) {
+    // Pas trouvé
+    if (!r?.value || r?.lastErrorObject?.updatedExisting === false) {
       return res.status(404).json({ error: 'Utilisateur introuvable', id });
     }
 
-    // r.value contient l'objet à jour si updatedExisting === true
+    // OK : document à jour
     return res.json(r.value);
-  } catch {
+  } catch (e) {
+    console.error('[updateUser] ERROR:', e);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

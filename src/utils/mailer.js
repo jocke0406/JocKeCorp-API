@@ -1,50 +1,44 @@
-import nodemailer from "nodemailer";
-import 'dotenv/config';
+// src/utils/mailer.js
+import nodemailer from 'nodemailer';
+import { cfg } from '../config/env.js';
 
-const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  MAIL_FROM,
-} = process.env;
-
-if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS || !MAIL_FROM) {
-  console.warn("[mailer] SMTP/MAIL_FROM incomplets. Renseigne .env");
-}
-
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT || 587),
-  secure: false,            // STARTTLS -> false sur 587
-  requireTLS: true,         // force l’upgrade TLS
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
+/**
+ * Transport SMTP Proximus
+ * - Port 587 + STARTTLS => secure: false + requireTLS: true
+ * - TLS v1.2 min, rejectUnauthorized: true en prod
+ */
+export const transporter = nodemailer.createTransport({
+  host: cfg.SMTP_HOST,
+  port: cfg.SMTP_PORT,
+  secure: cfg.SMTP_SECURE, // false pour STARTTLS
+  requireTLS: !cfg.SMTP_SECURE, // force l’upgrade TLS si on est en STARTTLS
+  auth: { user: cfg.SMTP_USER, pass: cfg.SMTP_PASS },
   tls: {
-    minVersion: "TLSv1.2",
-    rejectUnauthorized: true, // garde true en prod
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: true,
   },
 });
 
-/** Envoi générique */
+/** Envoi générique (fallback “simulate” si SMTP non configuré) */
 export async function sendMail({ to, subject, html, text, replyTo }) {
-  if (!SMTP_HOST) {
-    console.log("✉️ [DEV] Email simulé:", { to, subject });
+  if (!cfg.SMTP_HOST) {
+    console.log('✉️ [DEV] Email simulé:', { to, subject });
     return { simulated: true };
   }
   return transporter.sendMail({
-    from: MAIL_FROM,
+    from: cfg.MAIL_FROM, // "JocKeCorp <jockecorp@proximus.be>"
     to,
     subject,
     html,
-    text: text ?? html.replace(/<[^>]+>/g, " "),
-    replyTo, // optionnel
+    text: text ?? html.replace(/<[^>]+>/g, ' '), // fallback texte
+    replyTo,
   });
 }
 
 /** Templates */
-export function renderVerifyEmail({ appBaseUrl, token }) {
+export function renderVerifyEmail({ appBaseUrl = cfg.APP_BASE_URL, token }) {
   const link = `${appBaseUrl}/auth/verify-email?token=${encodeURIComponent(token)}`;
-  const subject = "Confirme ton email — JocKeCorp";
+  const subject = 'Confirme ton email — JocKeCorp';
   const html = `
   <div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45;color:#111">
     <h2>Bienvenue chez JocKeCorp 👋</h2>
@@ -61,9 +55,9 @@ export function renderVerifyEmail({ appBaseUrl, token }) {
   return { subject, html, link };
 }
 
-export function renderResetPassword({ appBaseUrl, token }) {
+export function renderResetPassword({ appBaseUrl = cfg.APP_BASE_URL, token }) {
   const link = `${appBaseUrl}/auth/reset-password?token=${encodeURIComponent(token)}`;
-  const subject = "Réinitialisation de mot de passe — JocKeCorp";
+  const subject = 'Réinitialisation de mot de passe — JocKeCorp';
   const html = `
   <div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45;color:#111">
     <h2>Réinitialiser ton mot de passe 🔐</h2>
@@ -79,4 +73,3 @@ export function renderResetPassword({ appBaseUrl, token }) {
   </div>`;
   return { subject, html, link };
 }
-export { transporter };
