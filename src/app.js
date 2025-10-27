@@ -1,69 +1,67 @@
-// src/app.js
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import routes from './routes/index.js';
-import { cfg } from './config/env.js';
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import routes from "./routes/index.js";
 
 const app = express();
 
-// Derrière Nginx/proxy → nécessaire pour que req.ip et rate-limit soient corrects
-app.set('trust proxy', 1);
+/** Express derrière Nginx : nécessaire pour IP/RateLimit/HTTPS */
+app.set("trust proxy","127.0.0.1");
 
-// JSON parser
 app.use(express.json());
-
-// No-store par défaut (API)
-app.use((_req, res, next) => {
-  res.set('Cache-Control', 'no-store');
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
   next();
 });
 
-// Helmet (CSP désactivé si tu seras amené à servir un front ailleurs)
+/** Helmet (CSP désactivée si Angular/inline) */
 app.use(helmet({ contentSecurityPolicy: false }));
 
-const ALLOWED_ORIGINS = cfg.APP_ORIGINS;
-console.log('[CORS] allowed origins:', ALLOWED_ORIGINS);
+/** CORS — géré UNIQUEMENT ici, pas dans Nginx */
+const allowedOrigins = [
+  "https://jocke.be",
+  "http://localhost:4200",
+  "http://127.0.0.1:4200",
+];
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      // Requêtes sans Origin (curl/Postman/health checks) → OK
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked: ${origin}`));
-    },
-    // Mets true UNIQUEMENT si tu utilises des cookies/credentials cross-site
-    credentials: false,
-    // Autorise les headers courants
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  })
-);
+const corsOptions = {
+  origin(origin, cb) {
+    // Autoriser requêtes sans Origin (curl, healthchecks)
+    if (!origin) return cb(null, true);
+    return cb(null, allowedOrigins.includes(origin));
+  },
+  credentials: false, // passe à true si TU utilises des cookies de session
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
 
+app.use(cors(corsOptions));
+// ⚠️ Ne pas remettre de app.options('*', ...) avec Express 5
+
+/** Rate limit (protège /auth, utilise l'IP via trust proxy) */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: ipKeyGenerator(),
 });
-app.use('/auth', authLimiter);
+app.use("/auth", authLimiter);
 
-// --------- Health ----------
-app.get('/health', (_req, res) => res.json({ ok: true }));
+/** Health */
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// --------- Logs compacts ----------
+/** Log simple */
 app.use((req, _res, next) => {
   console.log(`[REQ] ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// --------- Routes ----------
-app.use('/', routes);
+/** Routes applicatives */
+app.use("/", routes);
 
-// 404 JSON
-app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
+/** 404 JSON propre */
+app.use((_req, res) => res.status(404).json({ error: "Not found" }));
 
 export default app;
+
